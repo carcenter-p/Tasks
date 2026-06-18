@@ -380,6 +380,7 @@
     <p style="color:var(--faint);font-size:12.5px;text-align:center;margin-top:18px">
       המידע נשמר על המכשיר הזה בלבד. לתזכורות כשהמסך כבוי: הפעל "התראות מסך" למעלה והתקן את האפליקציה למסך הבית. באנדרואיד התזכורות יופיעו גם כשהאפליקציה סגורה; באייפון התזכורות פעילות כשהאפליקציה פתוחה.
     </p>
+    <p style="color:var(--faint);font-size:12px;text-align:center;margin-top:6px">גרסה 19.6 · b8</p>
   </section>
 
 </div>
@@ -991,7 +992,18 @@ function startListen(){
 }
 function finishListen(){ if(rec){ try{ rec.stop(); }catch(e){} } }
 function cancelListen(){ listenCancelled=true; if(rec){ try{ rec.stop(); }catch(e){} } $('#micOrb').classList.remove('live'); listenEl.classList.remove('open'); }
+function dedupeSpeech(text){
+  var w=String(text).split(/\s+/).filter(Boolean);
+  var out=[]; for(var i=0;i<w.length;i++){ if(i===0||w[i]!==w[i-1]) out.push(w[i]); }
+  w=out;
+  if(w.length>14){
+    var c={},mx=0; w.forEach(function(x){ c[x]=(c[x]||0)+1; if(c[x]>mx)mx=c[x]; });
+    if(mx>=3) w=w.slice(-12);  // pathological repetition: keep the latest, most complete hypothesis
+  }
+  return w.join(' ').trim();
+}
 function handleVoice(text){
+  text=dedupeSpeech(text);
   var p=parseHebrew(text);
   var sub=(p.date?relDay(p.date):'')+(p.time?' '+p.time:'')+(p.kind==='event'?' · פגישה':' · משימה');
   showToast('🎤','הבנתי: '+p.title, sub.trim());
@@ -1086,6 +1098,7 @@ function parseHebrew(text){
   t=t.replace(/(^|\s)(ב|ביום|בתאריך|ל|של)(\s|$)/g,' ');
   var title=t.replace(/\s+/g,' ').trim();
   if(!title) title=String(text).trim();
+  if(title.length>90){ var tw=title.split(' '); title=tw.slice(-12).join(' '); }
   return { kind:kind, title:title, date:date, time:time, priority:priority, leadMin:relLead };
 }
 
