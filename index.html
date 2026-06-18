@@ -963,14 +963,14 @@ function startListen(){
   $('#micOrb').classList.add('live');
   listenEl.classList.add('open');
   try{
-    rec=new SR(); rec.lang='he-IL'; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
+    rec=new SR(); rec.lang='he-IL'; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=1;
     rec.onresult=function(e){
-      var interim='';
-      for(var i=e.resultIndex;i<e.results.length;i++){
-        var r=e.results[i]; if(r.isFinal) recFinal+=r[0].transcript+' '; else interim+=r[0].transcript;
+      var fin='',interim='';
+      for(var i=0;i<e.results.length;i++){
+        var r=e.results[i]; if(r.isFinal) fin+=r[0].transcript+' '; else interim+=r[0].transcript;
       }
-      lastInterim=interim;
-      $('#listenText').textContent=(recFinal+interim).trim()||'…';
+      recFinal=fin; lastInterim=interim;
+      $('#listenText').textContent=(fin+interim).trim()||'…';
     };
     rec.onerror=function(ev){
       $('#micOrb').classList.remove('live'); listenEl.classList.remove('open');
@@ -1129,7 +1129,13 @@ document.addEventListener('visibilitychange',function(){ if(!document.hidden){ t
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('sw.js').catch(function () {});
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.register('sw.js').then(function (reg) { reg.update(); }).catch(function () {});
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController || window.__bkReloaded) return;
+        window.__bkReloaded = true;
+        location.reload();
+      });
     });
   }
 </script>
