@@ -249,6 +249,7 @@
   .listen-actions{display:flex;gap:10px}
   .listen-actions button{flex:1;min-height:52px;border-radius:14px;font-family:'Rubik';font-weight:600;font-size:16px}
   .listen-cancel{background:var(--surface-2);color:var(--ink)}
+  .listen-done{background:var(--accent);color:#fff}
 
   /* calendar */
   .cal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-top:10px}
@@ -392,9 +393,10 @@
     <div class="mic-orb" id="micOrb">🎤</div>
     <div class="listen-h" id="listenH">מקשיב…</div>
     <div class="listen-text" id="listenText"><span class="ph">דבר עכשיו — למשל: "פגישה עם דני מחר בשלוש"</span></div>
-    <div class="listen-hint">אפשר לומר משימה או פגישה עם זמן — והיא תיכנס אוטומטית</div>
+    <div class="listen-hint">דבר חופשי, ובסיום הקש "סיום". משימה או פגישה — תיכנס אוטומטית</div>
     <div class="listen-actions">
       <button class="listen-cancel" id="listenCancel">ביטול</button>
+      <button class="listen-done" id="listenDone">סיום ✓</button>
     </div>
   </div>
 </div>
@@ -944,10 +946,11 @@ $('#clearData').addEventListener('click',function(){
 
 /* ---------- voice capture: speech -> task/event ---------- */
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-var rec=null, recFinal='', listenEl=$('#listen');
+var rec=null, recFinal='', lastInterim='', listenCancelled=false, listenEl=$('#listen');
 $('#micFab').addEventListener('click',startListen);
-$('#listenCancel').addEventListener('click',stopListen);
-listenEl.addEventListener('click',function(e){ if(e.target===listenEl) stopListen(); });
+$('#listenCancel').addEventListener('click',cancelListen);
+$('#listenDone').addEventListener('click',finishListen);
+listenEl.addEventListener('click',function(e){ if(e.target===listenEl) cancelListen(); });
 
 function startListen(){
   unlockSpeech();
@@ -955,18 +958,18 @@ function startListen(){
     showToast('🎤','הכתבה קולית','לחץ על כפתור המיקרופון של המקלדת בתוך שדה הטקסט');
     openSheet(); return;
   }
-  recFinal='';
-  $('#listenText').innerHTML='<span class="ph">מקשיב…</span>';
+  recFinal=''; lastInterim=''; listenCancelled=false;
+  $('#listenText').innerHTML='<span class="ph">מקשיב… דבר, ובסיום הקש "סיום"</span>';
   $('#micOrb').classList.add('live');
   listenEl.classList.add('open');
   try{
-    rec=new SR(); rec.lang='he-IL'; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=1;
+    rec=new SR(); rec.lang='he-IL'; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
     rec.onresult=function(e){
-      var interim='',fin='';
+      var interim='';
       for(var i=e.resultIndex;i<e.results.length;i++){
-        var r=e.results[i]; if(r.isFinal) fin+=r[0].transcript; else interim+=r[0].transcript;
+        var r=e.results[i]; if(r.isFinal) recFinal+=r[0].transcript+' '; else interim+=r[0].transcript;
       }
-      if(fin) recFinal+=fin;
+      lastInterim=interim;
       $('#listenText').textContent=(recFinal+interim).trim()||'…';
     };
     rec.onerror=function(ev){
@@ -976,8 +979,9 @@ function startListen(){
       } else if(ev.error==='no-speech'){ showToast('🎤','לא נשמע דיבור','נסה שוב או הקלד'); }
     };
     rec.onend=function(){
-      $('#micOrb').classList.remove('live'); listenEl.classList.remove('open');
-      var text=recFinal.trim(); if(text) handleVoice(text);
+      $('#micOrb').classList.remove('live'); listenEl.classList.remove('open'); rec=null;
+      if(listenCancelled) return;
+      var text=(recFinal+' '+lastInterim).trim(); if(text) handleVoice(text);
     };
     rec.start();
   }catch(err){
@@ -985,10 +989,8 @@ function startListen(){
     showToast('🎤','לא ניתן להפעיל הקלטה','נסה להקליד ידנית'); openSheet();
   }
 }
-function stopListen(){
-  if(rec){ try{ rec.onend=null; rec.stop(); }catch(e){} rec=null; }
-  $('#micOrb').classList.remove('live'); listenEl.classList.remove('open');
-}
+function finishListen(){ if(rec){ try{ rec.stop(); }catch(e){} } }
+function cancelListen(){ listenCancelled=true; if(rec){ try{ rec.stop(); }catch(e){} } $('#micOrb').classList.remove('live'); listenEl.classList.remove('open'); }
 function handleVoice(text){
   var p=parseHebrew(text);
   var sub=(p.date?relDay(p.date):'')+(p.time?' '+p.time:'')+(p.kind==='event'?' · פגישה':' · משימה');
@@ -1030,10 +1032,11 @@ function parseHebrew(text){
     t=t.replace(rm[0],' ');
   }
   // date words
+  var mday;
   if(!date){
-    if(/(^|\s)היום(\s|$)/.test(t)){ date=todayISO(); t=t.replace('היום',' '); }
-    else if(/מחרתיים/.test(t)){ var a=new Date(dnow); a.setDate(a.getDate()+2); date=dISO(a); t=t.replace('מחרתיים',' '); }
-    else if(/(^|\s)מחר(\s|$)/.test(t)){ var b=new Date(dnow); b.setDate(b.getDate()+1); date=dISO(b); t=t.replace('מחר',' '); }
+    if((mday=t.match(/(^|\s)ל?היום(\s|$)/))){ date=todayISO(); t=t.replace(mday[0],' '); }
+    else if((mday=t.match(/(^|\s)ל?מחרתיים(\s|$)/))){ var a=new Date(dnow); a.setDate(a.getDate()+2); date=dISO(a); t=t.replace(mday[0],' '); }
+    else if((mday=t.match(/(^|\s)ל?מחר(\s|$)/))){ var b=new Date(dnow); b.setDate(b.getDate()+1); date=dISO(b); t=t.replace(mday[0],' '); }
   }
   // weekday
   if(!date){
@@ -1079,7 +1082,7 @@ function parseHebrew(text){
   }
   // cleanup -> title
   t=t.replace(/(בערב|בלילה|אחר הצהריים|אחהצ|בבוקר|לפנות בוקר|בצהריים|בצהרי|בשעה|השעה)/g,' ');
-  t=t.replace(/^\s*(תזכיר לי|תזכיר לו|תזכירי לי|תזכורת|תקבע לי|תקבעי לי|קבע לי|תוסיף|להוסיף|אני צריך|אני צריכה|צריך|צריכה|רוצה)\s*/,' ');
+  t=t.replace(/^\s*(תזכיר לי|תזכיר לו|תזכירי לי|תזכורת|לקבוע לי|לקבוע|תקבע לי|תקבעי לי|קבע לי|תוסיף|להוסיף|אני צריך|אני צריכה|צריך|צריכה|רוצה)\s*/,' ');
   t=t.replace(/(^|\s)(ב|ביום|בתאריך|ל|של)(\s|$)/g,' ');
   var title=t.replace(/\s+/g,' ').trim();
   if(!title) title=String(text).trim();
